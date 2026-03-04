@@ -6,6 +6,8 @@ const nextConfig = {
     reactStrictMode: true,
     swcMinify: true,
     images: {
+        // ✅ REMOVED: domains array completely (deprecated)
+        // ✅ KEPT: remotePatterns from both files, merged + deduped
         remotePatterns: [
             {
                 protocol: 'https',
@@ -43,9 +45,12 @@ const nextConfig = {
             {
                 protocol: 'https',
                 hostname: 'videos.pexels.com',
-            }
+            },
+            {
+                protocol: 'https',
+                hostname: 'logowik.com',  // from mjs
+            },
         ],
-        domains: ['firebasestorage.googleapis.com'],
     },
     experimental: {
         serverActions: {
@@ -56,7 +61,7 @@ const nextConfig = {
         config.resolve.alias['@'] = path.resolve(__dirname);
         
         config.infrastructureLogging = {
-          level: 'error',
+            level: 'error',
         };
 
         config.ignoreWarnings = [

@@ -207,7 +207,7 @@ export default function DashboardPage() {
 
       {/* Footer */}
       <div className="text-center text-gray-500 text-xs py-4 border-t border-gray-800">
-        <p>IndCric Admin Control Panel | Real-time Firestore sync ✅</p>
+        <p>indcric Admin Control Panel | Real-time Firestore sync ✅</p>
       </div>
     </div>
   );

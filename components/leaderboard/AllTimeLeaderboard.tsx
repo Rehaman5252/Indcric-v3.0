@@ -98,7 +98,7 @@ const AllTimeLeaderboard = () => {
       orderBy('perfectScores', 'desc'),
       orderBy('quizzesPlayed', 'asc'),
       orderBy('name', 'asc'),
-      limit(50)
+      limit(20)
     );
 
     let isMounted = true;

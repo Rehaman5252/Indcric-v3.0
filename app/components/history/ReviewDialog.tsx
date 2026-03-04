@@ -1,4 +1,4 @@
-
+// app/components/history/ReviewDialog.tsx
 'use client';
 
 import { useState, memo } from 'react';
@@ -30,11 +30,13 @@ const ReviewDialogComponent = ({
 }: ReviewDialogProps) => {
   const [reportingQuestion, setReportingQuestion] =
     useState<QuizQuestion | null>(null);
+  const [reportingIndex, setReportingIndex] = useState<number>(-1);
 
   if (!attempt) return null;
 
-  const handleReportClick = (question: QuizQuestion) => {
+  const handleReportClick = (question: QuizQuestion, index: number) => {
     setReportingQuestion(question);
+    setReportingIndex(index);
   };
 
   const attemptDate = normalizeTimestamp(attempt.timestamp);
@@ -101,7 +103,7 @@ const ReviewDialogComponent = ({
                       variant="ghost"
                       size="sm"
                       className="text-muted-foreground hover:text-destructive"
-                      onClick={() => handleReportClick(question)}
+                      onClick={() => handleReportClick(question, index)}
                     >
                       Report this question
                     </Button>
@@ -118,7 +120,6 @@ const ReviewDialogComponent = ({
         </DialogContent>
       </Dialog>
 
-      {/* This ensures only one Report dialog is rendered at a time */}
       {reportingQuestion && (
         <ReportQuestionDialog
           question={reportingQuestion}
@@ -126,8 +127,16 @@ const ReviewDialogComponent = ({
           onOpenChange={(isOpen) => {
             if (!isOpen) {
               setReportingQuestion(null);
+              setReportingIndex(-1);
             }
           }}
+          quizFormat={attempt.format}
+          slotId={attempt.slotId}
+          userAnswer={
+            reportingIndex >= 0
+              ? attempt.userAnswers[reportingIndex]
+              : undefined
+          }
         />
       )}
     </>

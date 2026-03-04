@@ -64,7 +64,9 @@ const SupportTicketDialogComponent = () => {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(false);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
-  const [ticketCount, setTicketCount] = useState(0);
+  
+  // ✅ CHANGED: Separate active count from total tickets
+  const [activeTicketCount, setActiveTicketCount] = useState(0);
 
   const [activeTicket, setActiveTicket] = useState<SupportTicket | null>(null);
   const [messages, setMessages] = useState<SupportMessage[]>([]);
@@ -148,6 +150,7 @@ const SupportTicketDialogComponent = () => {
     }
   };
 
+  // ✅ UPDATED: Load all tickets + calculate active count
   const loadTickets = async () => {
     if (!user) return;
     try {
@@ -162,6 +165,8 @@ const SupportTicketDialogComponent = () => {
       }
 
       const db = getFirestore(apps[0]);
+      
+      // ✅ Get ALL tickets for display
       const q = query(
         collection(db, 'supportTickets'),
         where('userId', '==', user.uid)
@@ -177,7 +182,15 @@ const SupportTicketDialogComponent = () => {
       });
 
       setTickets(userTickets);
-      setTicketCount(userTickets.length);
+      
+      // ✅ Calculate ACTIVE count (only open + in-progress)
+      const activeCount = userTickets.filter(
+        (ticket) => ticket.status === 'open' || ticket.status === 'in-progress'
+      ).length;
+      
+      setActiveTicketCount(activeCount);
+      
+      console.log(`[Tickets] Total: ${userTickets.length}, Active: ${activeCount}`);
     } catch (error) {
       console.error('Error loading tickets:', error);
     } finally {
@@ -365,9 +378,10 @@ const SupportTicketDialogComponent = () => {
                 <CardDescription>Create and track your support requests</CardDescription>
               </div>
             </div>
-            {ticketCount > 0 && (
+            {/* ✅ CHANGED: Show active count instead of total */}
+            {activeTicketCount > 0 && (
               <Badge className="bg-primary/20 text-primary border-primary/30">
-                {ticketCount} Active
+                {activeTicketCount} Active
               </Badge>
             )}
           </div>
@@ -380,7 +394,14 @@ const SupportTicketDialogComponent = () => {
               size="lg"
               className="w-full justify-between text-base py-6 bg-primary hover:bg-primary/90 text-primary-foreground font-semibold"
             >
-              <span>{ticketCount > 0 ? `View ${ticketCount} Tickets` : 'Create New Token'}</span>
+              {/* ✅ CHANGED: Show ticket count contextually */}
+              <span>
+                {activeTicketCount > 0 
+                  ? `View Tickets (${activeTicketCount} Active)` 
+                  : tickets.length > 0
+                  ? `View ${tickets.length} Tickets`
+                  : 'Create New Token'}
+              </span>
               <ChevronRight className="h-5 w-5" />
             </Button>
 
@@ -521,7 +542,7 @@ const SupportTicketDialogComponent = () => {
                     >
                       Create New Token
                     </button>
-                    {ticketCount > 0 && (
+                    {tickets.length > 0 && (
                       <button
                         onClick={() => setActiveTab('previous')}
                         className={`px-4 py-2 font-medium text-sm transition-colors ${
@@ -530,7 +551,13 @@ const SupportTicketDialogComponent = () => {
                             : 'text-muted-foreground hover:text-foreground'
                         }`}
                       >
-                        Previous Tokens ({ticketCount})
+                        {/* ✅ Show both active and total */}
+                        All Tokens ({tickets.length})
+                        {activeTicketCount > 0 && (
+                          <span className="ml-1 text-xs text-primary">
+                            · {activeTicketCount} active
+                          </span>
+                        )}
                       </button>
                     )}
                   </div>
@@ -571,9 +598,7 @@ const SupportTicketDialogComponent = () => {
                           <label className="text-sm font-medium">Priority</label>
                           <select
                             value={formData.priority}
-                            onChange={(e) =>
-                              setFormData({ ...formData, priority: e.target.value as any })
-                            }
+                            onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
                             disabled={loading}
                             className="w-full p-2 border rounded bg-background text-foreground"
                           >
@@ -594,30 +619,43 @@ const SupportTicketDialogComponent = () => {
                           </Button>
                           <Button
                             type="submit"
-                            disabled={
-                              loading || !formData.title.trim() || !formData.description.trim()
-                            }
+                            disabled={loading || !formData.title.trim() || !formData.description.trim()}
                           >
                             <Send className="mr-2 h-4 w-4" />
                             {loading ? 'Creating...' : 'Create Token'}
                           </Button>
                         </DialogFooter>
                       </form>
+
+                      {tickets.length > 0 && (
+                        <div className="pt-4 border-t">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="w-full"
+                            onClick={() => setActiveTab('previous')}
+                          >
+                            View My {tickets.length} Tokens
+                          </Button>
+                        </div>
+                      )}
                     </>
                   )}
 
-                  {/* PREVIOUS TOKENS TAB */}
+                  {/* PREVIOUS TICKETS TAB */}
                   {activeTab === 'previous' && (
                     <>
-                      <DialogHeader className="mb-4">
-                        <DialogTitle className="text-xl font-bold">Previous Tokens</DialogTitle>
-                        <DialogDescription>View all your support tokens here</DialogDescription>
+                      <DialogHeader>
+                        <DialogTitle className="text-xl font-bold">My Support Tokens</DialogTitle>
+                        <DialogDescription>
+                          Track all your support requests here
+                        </DialogDescription>
                       </DialogHeader>
 
-                      <div className="space-y-3">
+                      <div className="space-y-3 py-4">
                         {initialLoading ? (
                           <div className="flex items-center justify-center py-8">
-                            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
                           </div>
                         ) : tickets.length === 0 ? (
                           <div className="text-center py-8">
@@ -634,47 +672,45 @@ const SupportTicketDialogComponent = () => {
                           </div>
                         ) : (
                           tickets.map((ticket) => (
-                            <div key={ticket.id} className="relative group">
-                              <button
-                                type="button"
-                                onClick={() => openTicketConversation(ticket)}
-                                className="w-full text-left"
-                              >
-                                <Card className="bg-muted/50 hover:bg-muted transition cursor-pointer">
-                                  <CardContent className="p-4">
-                                    <div className="flex items-start justify-between mb-2">
-                                      <h3 className="font-semibold text-foreground">{ticket.title}</h3>
-                                      <Badge className={getStatusColor(ticket.status)}>
-                                        {ticket.status}
-                                      </Badge>
-                                    </div>
-                                    <p className="text-sm text-muted-foreground mb-2">
-                                      {ticket.description.substring(0, 100)}...
-                                    </p>
-                                    <div className="flex items-center justify-between">
-                                      <Badge className={getPriorityColor(ticket.priority)}>
-                                        {ticket.priority}
-                                      </Badge>
-                                      <span className="text-xs text-muted-foreground">
-                                        {ticket.messageCount || 0} messages
-                                      </span>
-                                    </div>
-                                  </CardContent>
-                                </Card>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setDeleteTicketId(ticket.id)}
-                                className="absolute top-2 right-2 p-2 bg-destructive/80 hover:bg-destructive text-white rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                title="Delete ticket"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </div>
+                            <Card 
+                              key={ticket.id} 
+                              className="bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors"
+                              onClick={() => openTicketConversation(ticket)}
+                            >
+                              <CardContent className="p-4">
+                                <div className="flex items-start justify-between mb-2">
+                                  <h3 className="font-semibold text-foreground">{ticket.title}</h3>
+                                  <Badge className={getStatusColor(ticket.status)}>
+                                    {ticket.status}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm text-muted-foreground mb-2">
+                                  {ticket.description.substring(0, 100)}...
+                                </p>
+                                <div className="flex items-center justify-between">
+                                  <Badge className={getPriorityColor(ticket.priority)}>
+                                    {ticket.priority}
+                                  </Badge>
+                                  <span className="text-xs text-muted-foreground">
+                                    {ticket.messageCount || 0} messages
+                                  </span>
+                                </div>
+                              </CardContent>
+                            </Card>
                           ))
                         )}
                       </div>
+
+                      <DialogFooter className="pt-4 border-t">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setActiveTab('create')}
+                          className="w-full"
+                        >
+                          Create New Token
+                        </Button>
+                      </DialogFooter>
                     </>
                   )}
                 </>
@@ -684,23 +720,32 @@ const SupportTicketDialogComponent = () => {
         </CardContent>
       </Card>
 
-      <AlertDialog open={!!deleteTicketId} onOpenChange={(open) => !open && setDeleteTicketId(null)}>
+      {/* DELETE CONFIRMATION DIALOG */}
+      <AlertDialog open={!!deleteTicketId} onOpenChange={() => setDeleteTicketId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Support Token?</AlertDialogTitle>
+            <AlertDialogTitle>Delete Support Ticket?</AlertDialogTitle>
             <AlertDialogDescription>
-              This action cannot be undone. The token and all its messages will be permanently
-              deleted.
+              This will permanently delete this ticket and all its messages. This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="flex justify-end gap-2 mt-4">
-            <AlertDialogCancel disabled={deletingTicket}>Cancel</AlertDialogCancel>
+            <AlertDialogCancel onClick={() => setDeleteTicketId(null)} disabled={deletingTicket}>
+              Cancel
+            </AlertDialogCancel>
             <AlertDialogAction
               onClick={() => deleteTicketId && deleteTicket(deleteTicketId)}
               disabled={deletingTicket}
-              className="bg-destructive hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              {deletingTicket ? 'Deleting...' : 'Delete'}
+              {deletingTicket ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete Ticket'
+              )}
             </AlertDialogAction>
           </div>
         </AlertDialogContent>

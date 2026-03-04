@@ -15,12 +15,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Loader2, Lock } from 'lucide-react';
 import { normalizeTimestamp } from '@/lib/dates';
 
-
 const profileSchema = z.object({
   name: z.string().min(3, 'Name must be at least 3 characters'),
   phone: z
     .string()
-    .regex(/^\d{10}$/, 'Phone must be exactly 10 digits'),  // ✅ ADD THIS
+    .regex(/^\d{10}$/, 'Phone must be exactly 10 digits'),
   dob: z
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format.')
@@ -41,7 +40,6 @@ const profileSchema = z.object({
   favoriteCricketer: z.string().min(1, 'Please enter your favorite cricketer'),
 });
 
-
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
 const occupations = ["Student", "Employee", "Business", "Professional", "Homemaker", "Other"];
@@ -60,7 +58,6 @@ function toInputDate(value: any): string {
   return date.toISOString().slice(0, 10);
 }
 
-
 interface EditProfileDialogProps {
   userProfile: any;
   children: React.ReactNode;
@@ -72,6 +69,9 @@ export function EditProfileDialog({ userProfile, children }: EditProfileDialogPr
   const { updateUserData } = useAuth();
   
   const defaultDob = toInputDate(userProfile.dob);
+  
+  // ✅ CHECK IF NAME IS ALREADY SET - if yes, make it read-only
+  const nameAlreadySet = userProfile.name && userProfile.name.trim().length > 0;
   
   // ✅ CHECK IF UPI IS ALREADY SET - if yes, make it read-only
   const upiAlreadySet = userProfile.upi && userProfile.upi.trim().length > 0;
@@ -100,11 +100,11 @@ export function EditProfileDialog({ userProfile, children }: EditProfileDialogPr
       await updateUserData(payload);
       toast({ title: 'Success!', description: 'Your profile has been updated.' });
       setOpen(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Profile update error', error);
       toast({
         title: 'Update Failed',
-        description: 'Could not save your changes. Please try again.',
+        description: error?.message || 'Could not save your changes. Please try again.',
         variant: 'destructive',
       });
     }
@@ -124,15 +124,42 @@ export function EditProfileDialog({ userProfile, children }: EditProfileDialogPr
         </DialogHeader>
         <div className="flex-grow overflow-y-auto pr-4 -mr-4">
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4" id="edit-profile-form">
+            
+            {/* ✅ NAME FIELD - DISABLED IF ALREADY SET */}
             <div>
-                <Label htmlFor="name">Full Name</Label>
-                <Controller name="name" control={control} render={({ field }) => <Input id="name" {...field} />} />
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="name">Full Name</Label>
+                  {nameAlreadySet && (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Lock className="h-3 w-3" /> 
+                    </span>
+                  )}
+                </div>
+                <Controller 
+                  name="name" 
+                  control={control} 
+                  render={({ field }) => (
+                    <Input 
+                      id="name" 
+                      {...field} 
+                      disabled={nameAlreadySet}
+                      className={nameAlreadySet ? 'opacity-60 cursor-not-allowed' : ''}
+                    />
+                  )} 
+                />
                 {errors.name && <p className="text-destructive text-sm mt-1">{errors.name.message}</p>}
+                {nameAlreadySet && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Name cannot be changed. Contact support if needed.
+                  </p>
+                )}
             </div>
+
             <div>
                 <Label htmlFor="email">Email Address</Label>
                 <Input id="email" value={userProfile?.email || ''} disabled />
             </div>
+            
             <div>
                 <Label htmlFor="phone">Phone Number</Label>
                 <Controller name="phone" control={control} render={({ field }) => <Input id="phone" {...field} />} />
@@ -163,6 +190,11 @@ export function EditProfileDialog({ userProfile, children }: EditProfileDialogPr
                   )} 
                 />
                 {errors.upi && <p className="text-destructive text-sm mt-1">{errors.upi.message}</p>}
+                {upiAlreadySet && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    UPI ID cannot be changed. Contact support if needed.
+                  </p>
+                )}
             </div>
 
             <div>
@@ -170,6 +202,7 @@ export function EditProfileDialog({ userProfile, children }: EditProfileDialogPr
                 <Controller name="dob" control={control} render={({ field }) => <Input id="dob" type="date" {...field} />} />
                 {errors.dob && <p className="text-destructive text-sm mt-1">{errors.dob.message}</p>}
             </div>
+            
             <div>
                 <Label htmlFor="gender">Gender</Label>
                 <Controller name="gender" control={control} render={({ field }) => (
@@ -184,6 +217,7 @@ export function EditProfileDialog({ userProfile, children }: EditProfileDialogPr
                 )} />
                 {errors.gender && <p className="text-destructive text-sm mt-1">{errors.gender.message}</p>}
             </div>
+            
             <div>
                 <Label htmlFor="occupation">Occupation</Label>
                 <Controller name="occupation" control={control} render={({ field }) => (
@@ -224,6 +258,7 @@ export function EditProfileDialog({ userProfile, children }: EditProfileDialogPr
                 )} />
                 {errors.favoriteTeam && <p className="text-destructive text-sm mt-1">{errors.favoriteTeam.message}</p>}
             </div>
+            
             <div>
                 <Label htmlFor="favoriteCricketer">Favorite Cricketer</Label>
                 <Controller name="favoriteCricketer" control={control} render={({ field }) => <Input id="favoriteCricketer" {...field} />} />

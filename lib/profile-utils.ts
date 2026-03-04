@@ -43,7 +43,7 @@ export function isProfileConsideredComplete(profile: any | null): boolean {
 }
 
 /**
- * ✅ NEW: Validate that UPI cannot be changed after it's been set
+ * ✅ Validate that UPI cannot be changed after it's been set
  * @param oldProfile - The existing profile (from Firestore)
  * @param newProfile - The profile data being updated
  * @throws Error if trying to change UPI after it's already set
@@ -56,4 +56,31 @@ export function validateUPICannotBeChanged(oldProfile: any, newProfile: any): vo
             throw new Error('UPI ID cannot be changed after it has been set. Contact support if you need to update it.');
         }
     }
+}
+
+/**
+ * ✅ NEW: Validate that Name cannot be changed after it's been set
+ * @param oldProfile - The existing profile (from Firestore)
+ * @param newProfile - The profile data being updated
+ * @throws Error if trying to change Name after it's already set
+ */
+export function validateNameCannotBeChanged(oldProfile: any, newProfile: any): void {
+    // If Name already exists in the old profile
+    if (oldProfile?.name && oldProfile.name.trim().length > 0) {
+        // Check if someone is trying to change it
+        if (newProfile?.name && newProfile.name !== oldProfile.name) {
+            throw new Error('Name cannot be changed after it has been set. Contact support if you need to update it.');
+        }
+    }
+}
+
+/**
+ * ✅ NEW: Validate all immutable fields at once
+ * @param oldProfile - The existing profile (from Firestore)
+ * @param newProfile - The profile data being updated
+ * @throws Error if trying to change any immutable field
+ */
+export function validateImmutableFields(oldProfile: any, newProfile: any): void {
+    validateNameCannotBeChanged(oldProfile, newProfile);
+    validateUPICannotBeChanged(oldProfile, newProfile);
 }

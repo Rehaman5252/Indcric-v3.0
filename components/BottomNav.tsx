@@ -17,16 +17,18 @@ const navItems = [
 export default function BottomNav() {
   const pathname = usePathname();
 
+  // ✅ Hide on specific routes
   if (
     pathname.startsWith('/auth') ||
     pathname.startsWith('/quiz') ||
-    pathname.startsWith('/walkthrough')
+    pathname.startsWith('/walkthrough') ||
+    pathname.startsWith('/admin')
   ) {
     return null;
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-amber-900/40 shadow-[0_-8px_24px_rgba(212,175,55,0.3)]">
+    <div className="fixed bottom-0 left-0 right-0 bg-background border-t border-amber-900/40 shadow-[0_-8px_24px_rgba(212,175,55,0.3)] z-40">
       {/* Navigation items */}
       <nav className="flex justify-around items-center px-4 py-3">
         {navItems.map((item) => {

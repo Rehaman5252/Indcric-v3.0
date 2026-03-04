@@ -7,7 +7,8 @@ import {
   onSnapshot, 
   deleteDoc, 
   query, 
-  where 
+  where,
+  writeBatch
 } from 'firebase/firestore';
 
 export interface UserData {
@@ -17,6 +18,7 @@ export interface UserData {
   phoneNumber: string;
   lastLogin: string;
   lastQuizTaken: string;
+  lastQuizDate?: Date;
 }
 
 export interface UserMetrics {
@@ -29,28 +31,22 @@ export interface UserMetrics {
 // ✅ Helper function to parse any timestamp format to Date
 function parseTimestamp(timestamp: any): Date | undefined {
   try {
-    // Firestore Timestamp with toDate() method
     if (timestamp && typeof timestamp.toDate === 'function') {
       return timestamp.toDate();
     }
-    // Object with seconds property (Firestore format)
     if (timestamp && typeof timestamp === 'object' && 'seconds' in timestamp) {
       return new Date(timestamp.seconds * 1000);
     }
-    // Already a Date object
     if (timestamp instanceof Date) {
       return timestamp;
     }
-    // Number (milliseconds)
     if (typeof timestamp === 'number') {
       return new Date(timestamp);
     }
-    // String
     if (typeof timestamp === 'string') {
       const parsed = new Date(timestamp);
       return isNaN(parsed.getTime()) ? undefined : parsed;
     }
-    
     return undefined;
   } catch (error) {
     console.error('Timestamp parsing error:', error);
@@ -98,13 +94,11 @@ export function subscribeToUserMetrics(callback: (metrics: UserMetrics) => void)
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
   thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-  // Subscribe to total users count
   const usersUnsub = onSnapshot(collection(db, 'users'), (snapshot) => {
     currentMetrics.totalUsers = snapshot.size;
     updateMetrics();
   });
 
-  // Subscribe to quiz attempts for active users
   const quizAttemptsUnsub = onSnapshot(collection(db, 'quizAttempts'), (snapshot) => {
     const todaySet = new Set<string>();
     const weekSet = new Set<string>();
@@ -130,67 +124,78 @@ export function subscribeToUserMetrics(callback: (metrics: UserMetrics) => void)
     updateMetrics();
   });
 
-  // Return unsubscribe function
   return () => {
     usersUnsub();
     quizAttemptsUnsub();
   };
 }
 
+async function buildQuizAttemptsMap(): Promise<Map<string, Date>> {
+  const quizAttemptsMap = new Map<string, Date>();
+  
+  try {
+    const quizDocs = await getDocs(collection(db, 'quizAttempts'));
+    
+    quizDocs.forEach((doc) => {
+      const data = doc.data();
+      const userId = data.userId;
+      const attemptDate = parseTimestamp(data.timestamp);
+      
+      if (userId && attemptDate) {
+        const existingDate = quizAttemptsMap.get(userId);
+        if (!existingDate || attemptDate > existingDate) {
+          quizAttemptsMap.set(userId, attemptDate);
+        }
+      }
+    });
+    
+    console.log('✅ Quiz attempts map built:', quizAttemptsMap.size, 'unique users');
+  } catch (error) {
+    console.error('❌ Error building quiz attempts map:', error);
+  }
+  
+  return quizAttemptsMap;
+}
+
 export async function getAllUsersWithDetails(): Promise<UserData[]> {
   try {
-    const userDocs = await getDocs(collection(db, 'users'));
-    const users: UserData[] = [];
+    console.time('⏱️ Total fetch time');
+    
+    console.time('⏱️ Fetching users and quiz attempts');
+    const [userDocs, quizAttemptsMap] = await Promise.all([
+      getDocs(collection(db, 'users')),
+      buildQuizAttemptsMap()
+    ]);
+    console.timeEnd('⏱️ Fetching users and quiz attempts');
 
-    for (const userDoc of userDocs.docs) {
+    console.time('⏱️ Processing users');
+    const users: UserData[] = userDocs.docs.map((userDoc) => {
       const data = userDoc.data();
       
-      // Parse lastPlayedAt for last login
       const lastPlayedDate = parseTimestamp(data.lastPlayedAt);
       const lastLogin = formatDate(lastPlayedDate);
 
-      // Get last quiz attempt
-      let lastQuizTaken = 'N/A';
-      try {
-        const quizAttempts = await getDocs(
-          query(collection(db, 'quizAttempts'), where('userId', '==', userDoc.id))
-        );
-        
-        if (quizAttempts.size > 0) {
-          // Find the most recent attempt
-          let latestDate: Date | undefined = undefined;
-          
-          quizAttempts.docs.forEach((attemptDoc) => {
-            const attempt = attemptDoc.data();
-            const attemptDate = parseTimestamp(attempt.timestamp);
-            
-            if (attemptDate) {
-              if (!latestDate || attemptDate > latestDate) {
-                latestDate = attemptDate;
-              }
-            }
-          });
-          
-          lastQuizTaken = formatDate(latestDate);
-        }
-      } catch (error) {
-        console.warn('Could not fetch quiz attempts for user:', data.email, error);
-      }
+      const lastQuizDate = quizAttemptsMap.get(userDoc.id);
+      const lastQuizTaken = formatDate(lastQuizDate);
 
-      users.push({
+      return {
         uid: userDoc.id,
         displayName: data.name || 'Unknown',
         email: data.email || 'N/A',
         phoneNumber: data.phone || 'N/A',
         lastLogin,
         lastQuizTaken,
-      });
-    }
+        lastQuizDate,
+      };
+    });
+    console.timeEnd('⏱️ Processing users');
 
+    console.timeEnd('⏱️ Total fetch time');
     console.log('✅ All users loaded:', users.length);
+    
     return users;
   } catch (error) {
-    console.error('Error fetching users:', error);
+    console.error('❌ Error fetching users:', error);
     return [];
   }
 }
@@ -202,15 +207,70 @@ export async function getUsersByIdsWithDetails(userIds: string[]): Promise<UserD
     const allUsers = await getAllUsersWithDetails();
     return allUsers.filter((u) => userIds.includes(u.uid));
   } catch (error) {
-    console.error('Error fetching users by IDs:', error);
+    console.error('❌ Error fetching users by IDs:', error);
     return [];
   }
 }
 
+// ✅ ENHANCED: Delete user and all related data with batch operations
 export async function deleteUser(userId: string): Promise<void> {
   try {
+    console.log('🗑️ Starting deletion for user:', userId);
+
+    // Delete user document
     await deleteDoc(doc(db, 'users', userId));
-    console.log('✅ User deleted:', userId);
+    console.log('✅ User document deleted');
+
+    // Delete subcollections (handled by Firestore rules now)
+    const subcollections = ['reviewState', 'quizAttempts', 'rewards', 'answers'];
+    
+    for (const subcol of subcollections) {
+      try {
+        const subcollectionRef = collection(db, `users/${userId}/${subcol}`);
+        const subcollectionDocs = await getDocs(subcollectionRef);
+        
+        if (subcollectionDocs.size > 0) {
+          const batch = writeBatch(db);
+          subcollectionDocs.docs.forEach((doc) => {
+            batch.delete(doc.ref);
+          });
+          await batch.commit();
+          console.log(`✅ Deleted ${subcollectionDocs.size} docs from ${subcol}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Could not delete ${subcol}:`, error);
+      }
+    }
+
+    // Delete related quiz attempts from main collection
+    try {
+      const quizAttemptsQuery = query(
+        collection(db, 'quizAttempts'),
+        where('userId', '==', userId)
+      );
+      const quizAttempts = await getDocs(quizAttemptsQuery);
+      
+      if (quizAttempts.size > 0) {
+        const batch = writeBatch(db);
+        quizAttempts.docs.forEach((doc) => {
+          batch.delete(doc.ref);
+        });
+        await batch.commit();
+        console.log(`✅ Deleted ${quizAttempts.size} quiz attempts`);
+      }
+    } catch (error) {
+      console.warn('⚠️ Could not delete quiz attempts:', error);
+    }
+
+    // Delete user question history
+    try {
+      await deleteDoc(doc(db, 'userQuestionHistory', userId));
+      console.log('✅ User question history deleted');
+    } catch (error) {
+      console.warn('⚠️ Could not delete question history:', error);
+    }
+
+    console.log('✅ User and all related data deleted successfully');
   } catch (error) {
     console.error('❌ Error deleting user:', userId, error);
     throw error;

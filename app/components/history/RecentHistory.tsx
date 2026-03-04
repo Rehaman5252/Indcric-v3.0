@@ -29,7 +29,7 @@ export default function RecentHistory() {
       const q = query(
         collection(db, 'users', user.uid, 'quizAttempts'),
         orderBy('timestamp', 'desc'),
-        limit(3)
+        limit(5)
       );
 
       unsubscribe = onSnapshot(

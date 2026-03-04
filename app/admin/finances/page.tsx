@@ -7,6 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   TrendingUp,
   DollarSign,
@@ -17,6 +19,8 @@ import {
   Download,
   AlertTriangle,
   Clock,
+  Calendar,
+  RotateCcw,
 } from 'lucide-react';
 import {
   getAllPaymentRequests,
@@ -81,7 +85,6 @@ const generateTimeSlots = (): TimeSlot[] => {
   return slots;
 };
 
-// Normalize timestamp to Date object with detailed logging
 // Normalize timestamp to Date object with detailed logging
 const normalizeTimestamp = (timestamp: any, paymentId?: string): Date | null => {
   if (!timestamp) {
@@ -160,9 +163,6 @@ const getTimeSlotForPayment = (timestamp: any, slots: TimeSlot[], paymentId?: st
   if (paymentId) console.log(`✓ [${paymentId}] Assigned to slot: ${slot.label}`);
   return slot;
 };
-
-
-// Get time slot for payment - with detailed validation
 
 // Slot Group Card Component
 interface SlotGroupCardProps {
@@ -302,6 +302,10 @@ export default function FinancesPage() {
   const [processing, setProcessing] = useState<string | null>(null);
   const [timeSlots] = useState<TimeSlot[]>(generateTimeSlots());
 
+  // ✅ SIMPLIFIED: Single Date Filter
+  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [dateFilterActive, setDateFilterActive] = useState(false);
+
   useEffect(() => {
     const adminSession = getSessionFromStorage();
     if (!adminSession) {
@@ -367,6 +371,74 @@ export default function FinancesPage() {
     }
   };
 
+  // ✅ SIMPLIFIED: Apply Date Filter (Single Date)
+  const applyDateFilter = () => {
+    if (!selectedDate) {
+      toast.error('Please select a date');
+      return;
+    }
+
+    const filterDate = new Date(selectedDate);
+    const startOfDay = new Date(filterDate);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(filterDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    let filtered = payments;
+
+    // Apply status filter
+    switch (viewMode) {
+      case 'pending':
+        filtered = payments.filter((p: PaymentWithSlot) => p.status === 'pending');
+        break;
+      case 'completed':
+        filtered = payments.filter((p: PaymentWithSlot) => p.status === 'completed');
+        break;
+      case 'failed':
+        filtered = payments.filter((p: PaymentWithSlot) => p.status === 'failed');
+        break;
+      default:
+        filtered = payments;
+    }
+
+    // Apply date filter (for the entire day)
+    filtered = filtered.filter((p: PaymentWithSlot) => {
+      const paymentDate = normalizeTimestamp(p.createdAt);
+      if (!paymentDate) return false;
+      return paymentDate >= startOfDay && paymentDate <= endOfDay;
+    });
+
+    setFilteredPayments(filtered);
+    setDateFilterActive(true);
+    toast.success(`Showing ${filtered.length} payments on ${filterDate.toLocaleDateString()}`);
+    console.log(`📋 Filtered to ${filtered.length} payments for ${selectedDate}`);
+  };
+
+  // ✅ SIMPLIFIED: Clear Date Filter
+  const clearDateFilter = () => {
+    setSelectedDate('');
+    setDateFilterActive(false);
+    
+    // Reapply status filter only
+    let filtered = payments;
+    switch (viewMode) {
+      case 'pending':
+        filtered = payments.filter((p: PaymentWithSlot) => p.status === 'pending');
+        break;
+      case 'completed':
+        filtered = payments.filter((p: PaymentWithSlot) => p.status === 'completed');
+        break;
+      case 'failed':
+        filtered = payments.filter((p: PaymentWithSlot) => p.status === 'failed');
+        break;
+      default:
+        filtered = payments;
+    }
+    setFilteredPayments(filtered);
+    toast.success('Date filter cleared');
+  };
+
   useEffect(() => {
     let filtered = payments;
 
@@ -384,9 +456,25 @@ export default function FinancesPage() {
         filtered = payments;
     }
 
+    // If date filter is active, reapply it
+    if (dateFilterActive && selectedDate) {
+      const filterDate = new Date(selectedDate);
+      const startOfDay = new Date(filterDate);
+      startOfDay.setHours(0, 0, 0, 0);
+
+      const endOfDay = new Date(filterDate);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      filtered = filtered.filter((p: PaymentWithSlot) => {
+        const paymentDate = normalizeTimestamp(p.createdAt);
+        if (!paymentDate) return false;
+        return paymentDate >= startOfDay && paymentDate <= endOfDay;
+      });
+    }
+
     setFilteredPayments(filtered);
     console.log(`📋 Filtered to ${filtered.length} payments for view mode: ${viewMode}`);
-  }, [viewMode, payments]);
+  }, [viewMode, payments, dateFilterActive, selectedDate]);
 
   const handleMarkCompleted = async (paymentId: string) => {
     if (!session?.email) {
@@ -606,6 +694,67 @@ export default function FinancesPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ✅ SIMPLIFIED: Single Date Picker */}
+      <Card className="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 border-purple-200 dark:border-purple-800">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-purple-600" />
+            📅 Filter by Date
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div className="space-y-2">
+              <Label htmlFor="select-date" className="text-sm font-semibold">
+                Select Date
+              </Label>
+              <Input
+                id="select-date"
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="w-full"
+                max={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+
+            <Button 
+              onClick={applyDateFilter} 
+              className="gap-2 bg-purple-600 hover:bg-purple-700"
+              disabled={!selectedDate}
+            >
+              <Calendar className="h-4 w-4" />
+              Show Payments
+            </Button>
+
+            {dateFilterActive && (
+              <Button 
+                onClick={clearDateFilter} 
+                variant="outline" 
+                className="gap-2 border-purple-300 text-purple-700 hover:bg-purple-100 dark:border-purple-700 dark:text-purple-300"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Clear Filter
+              </Button>
+            )}
+          </div>
+
+          {dateFilterActive && selectedDate && (
+            <div className="mt-4 p-3 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+              <p className="text-sm font-semibold text-purple-800 dark:text-purple-200">
+                🔍 Showing payments from: <span className="font-bold">{new Date(selectedDate).toLocaleDateString('en-IN', { 
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}</span>
+                <span className="ml-2 font-bold">({filteredPayments.length} payments)</span>
+              </p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Display Mode Toggle */}
       <Card>

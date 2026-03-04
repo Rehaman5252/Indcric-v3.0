@@ -100,7 +100,7 @@ const StreakLeaderboard = () => {
     }
 
     const usersCollection = collection(db, 'users');
-    const q = query(usersCollection, orderBy('currentStreak', 'desc'), orderBy('name', 'asc'), limit(50));
+    const q = query(usersCollection, orderBy('currentStreak', 'desc'), orderBy('name', 'asc'), limit(20));
     
     let isMounted = true;
     const unsubscribe = onSnapshot(q, async (querySnapshot) => {

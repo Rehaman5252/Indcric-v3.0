@@ -18,8 +18,8 @@ console.log("✅ Genkit: API Key found");
 // Initialize Google Generative AI SDK directly
 export const googleAI_SDK = new GoogleGenerativeAI(apiKey);
 
-// ✅ Use the working model name from your test
-export const MODEL_NAME = 'gemini-2.0-flash-exp';
+// ✅ CRITICAL: Use Flash-Lite for 2-3x faster generation
+export const MODEL_NAME = 'gemini-2.5-flash-lite';
 
 // Configure Genkit AI (for other features, not for model)
 export const ai = genkit({

@@ -10,7 +10,7 @@ import {
   orderBy,
   Timestamp,
   serverTimestamp,
-  deleteDoc, 
+  deleteDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 
@@ -83,7 +83,28 @@ export const createSupportTicket = async (
   }
 };
 
-// Get user's support tickets
+// ✅ NEW: Get user's ACTIVE tickets only (open + in-progress)
+export const getUserActiveTickets = async (userId: string): Promise<SupportTicket[]> => {
+  try {
+    const ticketsRef = collection(db, 'supportTickets');
+    const q = query(
+      ticketsRef,
+      where('userId', '==', userId),
+      where('status', 'in', ['open', 'in-progress']),
+      orderBy('updatedAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as SupportTicket[];
+  } catch (error) {
+    console.error('Error fetching active tickets:', error);
+    throw error;
+  }
+};
+
+// Get user's ALL support tickets (including resolved and closed)
 export const getUserSupportTickets = async (userId: string): Promise<SupportTicket[]> => {
   try {
     const ticketsRef = collection(db, 'supportTickets');
@@ -103,7 +124,27 @@ export const getUserSupportTickets = async (userId: string): Promise<SupportTick
   }
 };
 
-// Get all support tickets (admin) - NO WHERE CLAUSE for admins
+// ✅ NEW: Get admin's ACTIVE tickets only (open + in-progress)
+export const getActiveTickets = async (): Promise<SupportTicket[]> => {
+  try {
+    const ticketsRef = collection(db, 'supportTickets');
+    const q = query(
+      ticketsRef,
+      where('status', 'in', ['open', 'in-progress']),
+      orderBy('updatedAt', 'desc')
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map((doc) => ({
+      id: doc.id,
+      ...doc.data(),
+    })) as SupportTicket[];
+  } catch (error) {
+    console.error('Error fetching active tickets:', error);
+    throw error;
+  }
+};
+
+// Get all support tickets (admin) - ALL statuses
 export const getAllSupportTickets = async (): Promise<SupportTicket[]> => {
   try {
     const ticketsRef = collection(db, 'supportTickets');
@@ -172,7 +213,7 @@ export const addTicketMessage = async (
     // Update ticket's updatedAt and messageCount
     const ticketRef = doc(db, 'supportTickets', ticketId);
     const messages = await getTicketMessages(ticketId);
-    
+
     await updateDoc(ticketRef, {
       updatedAt: Timestamp.now(),
       messageCount: messages.length,
@@ -230,6 +271,7 @@ export const assignTicket = async (ticketId: string, adminId: string): Promise<v
     throw error;
   }
 };
+
 // Delete ticket (admin) – hard delete the document
 export const deleteSupportTicket = async (ticketId: string): Promise<void> => {
   try {

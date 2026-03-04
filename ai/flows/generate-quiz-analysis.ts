@@ -15,7 +15,7 @@ interface QuizAnalysisInput {
 }
 
 interface QuizAnalysis {
-  overallFeedback: string; // ✅ Match Results page
+  overallFeedback: string;
   strengths: string[];
   areasForImprovement: string[];
   recommendations: string[];
@@ -28,10 +28,11 @@ export async function generateQuizAnalysis(input: QuizAnalysisInput): Promise<Qu
     const model = googleAI_SDK.getGenerativeModel({
       model: MODEL_NAME,
       generationConfig: {
-        temperature: 0.8,
+        temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 800,
+        maxOutputTokens: 2048, // ✅ INCREASED from 800 to 2048
+        responseMimeType: "application/json",
       },
     });
 
@@ -39,72 +40,146 @@ export async function generateQuizAnalysis(input: QuizAnalysisInput): Promise<Qu
       .map((q, i) => `Q${i + 1}: ${q.question}\nYour answer: ${q.userAnswer}\nCorrect: ${q.isCorrect ? 'Yes' : 'No'}`)
       .join('\n\n');
 
-    const prompt = `You are a cricket quiz coach analyzing a student's performance.
+    const percentage = Math.round((input.score / input.totalQuestions) * 100);
 
-Quiz Details:
-- Format: ${input.format} cricket
-- Score: ${input.score} out of ${input.totalQuestions} (${Math.round((input.score / input.totalQuestions) * 100)}%)
+    // ✅ SHORTER, more focused prompt
+    const prompt = `Analyze this ${input.format} cricket quiz performance (${input.score}/${input.totalQuestions} - ${percentage}%):
 
-Questions and Answers:
 ${questionsText}
 
-Generate a JSON analysis with this structure:
+Return ONLY this JSON structure with SHORT responses:
 {
-  "overallFeedback": "A 2-sentence summary of performance",
-  "strengths": ["Specific strength 1", "Specific strength 2"],
-  "areasForImprovement": ["Area to improve 1", "Area to improve 2"],
-  "recommendations": ["Actionable tip 1", "Actionable tip 2", "Actionable tip 3"]
+  "overallFeedback": "2 sentences max",
+  "strengths": ["strength 1 (10 words max)", "strength 2 (10 words max)"],
+  "areasForImprovement": ["area 1 (10 words max)", "area 2 (10 words max)"],
+  "recommendations": ["tip 1 (12 words max)", "tip 2 (12 words max)", "tip 3 (12 words max)"]
 }
 
-Rules:
-- Be specific to their answers
-- Keep overall feedback to 2 sentences max
-- Provide 2 strengths, 2 areas for improvement, 3 recommendations
-- Focus on cricket knowledge gaps (eras, players, stats, rules, etc.)
-- Keep each point to 15 words or less
-- Return ONLY valid JSON, no markdown formatting`;
+Keep EVERY field SHORT. No extra text outside JSON.`;
 
     const result = await model.generateContent(prompt);
     const response = await result.response;
-    const text = response.text();
+    const text = response.text().trim();
 
-    console.log('[generateQuizAnalysis] ✅ AI response received');
+    console.log('[generateQuizAnalysis] 📄 Raw AI response:', text);
+    console.log('[generateQuizAnalysis] 📏 Response length:', text.length);
 
-    // Parse JSON response
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    // Clean up common JSON issues
+    let cleanedText = text;
+    
+    // Remove markdown code blocks if present
+    cleanedText = cleanedText.replace(/```json\s*/g, '').replace(/```\s*/g, '');
+    
+    // Find JSON object - use greedy match to get complete JSON
+    const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
+      console.error('[generateQuizAnalysis] ❌ No JSON found. Full response:', text);
       throw new Error('No JSON found in AI response');
     }
 
-    const analysis = JSON.parse(jsonMatch[0]) as QuizAnalysis;
+    console.log('[generateQuizAnalysis] 🔍 Extracted JSON:', jsonMatch[0]);
+
+    let analysis: QuizAnalysis;
+    try {
+      analysis = JSON.parse(jsonMatch[0]);
+    } catch (parseError) {
+      console.error('[generateQuizAnalysis] ❌ JSON parse error:', parseError);
+      console.error('[generateQuizAnalysis] 📄 Failed JSON:', jsonMatch[0]);
+      throw new Error('Invalid JSON from AI');
+    }
 
     // Validate response structure
-    if (!analysis.overallFeedback || !Array.isArray(analysis.strengths)) {
+    if (
+      !analysis.overallFeedback || 
+      !Array.isArray(analysis.strengths) || 
+      !Array.isArray(analysis.areasForImprovement) || 
+      !Array.isArray(analysis.recommendations)
+    ) {
+      console.error('[generateQuizAnalysis] ❌ Invalid structure:', analysis);
       throw new Error('Invalid analysis structure from AI');
+    }
+
+    // Ensure arrays have minimum content
+    if (analysis.strengths.length === 0) {
+      analysis.strengths = ['Good quiz completion', 'Consistent effort'];
+    }
+    if (analysis.areasForImprovement.length === 0) {
+      analysis.areasForImprovement = ['Review incorrect answers', 'Study specific topics'];
+    }
+    if (analysis.recommendations.length === 0) {
+      analysis.recommendations = [
+        'Practice more quizzes',
+        'Focus on weak areas',
+        'Review cricket history'
+      ];
     }
 
     console.log('[generateQuizAnalysis] ✅ Analysis generated successfully');
     return analysis;
+
   } catch (error: any) {
     console.error('[generateQuizAnalysis] ❌ Error:', error?.message || error);
 
     // Return fallback analysis
     const percentage = Math.round((input.score / input.totalQuestions) * 100);
+    
+    let feedbackMessage = '';
+    let strengths: string[] = [];
+    let improvements: string[] = [];
+    let recommendations: string[] = [];
+
+    if (percentage >= 80) {
+      feedbackMessage = `Excellent work on the ${input.format} quiz! You scored ${input.score} out of ${input.totalQuestions}. Your cricket knowledge is impressive.`;
+      strengths = [
+        'Strong cricket knowledge demonstrated',
+        'High accuracy on most questions',
+      ];
+      improvements = [
+        'Minor gaps in specific areas',
+        'Could improve on trickier questions',
+      ];
+      recommendations = [
+        'Challenge yourself with advanced quizzes',
+        'Study niche records and statistics',
+        'Explore lesser-known cricket history',
+      ];
+    } else if (percentage >= 60) {
+      feedbackMessage = `Good effort on the ${input.format} quiz! You scored ${input.score} out of ${input.totalQuestions}. With more practice, you'll improve significantly.`;
+      strengths = [
+        'Solid foundation in cricket basics',
+        'Completed quiz with good engagement',
+      ];
+      improvements = [
+        'Need deeper knowledge in some areas',
+        'Review incorrect answers carefully',
+      ];
+      recommendations = [
+        `Focus on ${input.format} format rules and history`,
+        'Practice more quizzes regularly',
+        'Study player statistics and records',
+      ];
+    } else {
+      feedbackMessage = `Keep practicing! You scored ${input.score} out of ${input.totalQuestions} on the ${input.format} quiz. Every quiz helps you learn.`;
+      strengths = [
+        'Shows interest in learning cricket',
+        'Completed the quiz attempt',
+      ];
+      improvements = [
+        'Need to build foundational knowledge',
+        'Review basic rules and history',
+      ];
+      recommendations = [
+        'Start with easier quiz formats',
+        'Watch matches and read about cricket',
+        'Study one topic deeply before moving on',
+      ];
+    }
+
     return {
-      overallFeedback: `A solid effort on the ${input.format} quiz! You scored ${input.score} out of ${input.totalQuestions}. We're showing general feedback as the AI coach is unavailable.`,
-      strengths: [
-        'Consistency in completing quizzes.',
-        'Willingness to learn and improve.',
-      ],
-      areasForImprovement: [
-        'Potential gaps in specific eras or player stats.',
-        'Time management on difficult questions.',
-      ],
-      recommendations: [
-        'Review questions you were unsure about.',
-        `Focus on one cricket format to build deep knowledge.`,
-        "Try to answer questions you're confident about more quickly.",
-      ],
+      overallFeedback: feedbackMessage,
+      strengths,
+      areasForImprovement: improvements,
+      recommendations,
     };
   }
 }

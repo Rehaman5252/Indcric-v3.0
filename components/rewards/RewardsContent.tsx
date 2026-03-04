@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
 import { normalizeTimestamp } from '@/lib/dates';
 import { EmptyState } from '../EmptyState';
 import LoginPrompt from '../auth/LoginPrompt';
-import { collection, getDocs, query, where, limit } from 'firebase/firestore';
+import { collection, getDocs, query, where } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import GenericOffers from '@/components/rewards/GenericOffers';
 
@@ -57,8 +57,12 @@ interface RewardAd extends AdData {
 }
 
 interface ScratchedCardState {
-  scratchedAt: number; // timestamp when scratched
+  scratchedAt: number;
 }
+
+// ✅ OPTIMIZATION 1: In-memory cache with 5-minute TTL
+const adCache = new Map<string, { ad: AdData; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 const ScratchCardSkeleton = () => (
   <div className="w-full aspect-[3/4] p-1">
@@ -98,7 +102,6 @@ const ErrorStateDisplay = ({ message }: { message: string }) => (
   </Alert>
 );
 
-// ✅ CUSTOM HOOK FOR SOUND WITH 1 SECOND DURATION
 const useSoundEffect = (soundPath: string, duration: number = 1000) => {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -140,7 +143,6 @@ const useSoundEffect = (soundPath: string, duration: number = 1000) => {
   return play;
 };
 
-// ✅ Utility to calculate days remaining
 const getDaysRemaining = (scratchedAt: number): number => {
   const now = Date.now();
   const sevenDaysInMs = 7 * 24 * 60 * 60 * 1000;
@@ -150,7 +152,6 @@ const getDaysRemaining = (scratchedAt: number): number => {
   return Math.max(0, daysRemaining);
 };
 
-// ✅ Utility to check if card has expired
 const isCardExpired = (scratchedAt: number): boolean => {
   return getDaysRemaining(scratchedAt) <= 0;
 };
@@ -172,7 +173,6 @@ const ScratchCard = memo(
     const playScratchSound = useSoundEffect('/scratch.mp3', 1000);
     const isScratched = !!scratchState;
 
-    // Check for expiry periodically and auto-remove if expired
     useEffect(() => {
       if (!isScratched) return;
 
@@ -182,10 +182,7 @@ const ScratchCard = memo(
         }
       };
 
-      // Check immediately
       checkExpiry();
-
-      // Then check every minute
       const interval = setInterval(checkExpiry, 60000);
       return () => clearInterval(interval);
     }, [isScratched, scratchState, onExpired]);
@@ -256,7 +253,6 @@ const ScratchCard = memo(
                   Exclusive Partner Offer · {ad.format}
                 </p>
 
-                {/* ✅ EXPIRY INFO */}
                 <div className="flex items-center justify-center gap-1 mt-2 text-xs text-amber-600 dark:text-amber-400">
                   <Clock className="h-3 w-3" />
                   <span>
@@ -323,6 +319,7 @@ function RewardsContentComponent() {
     };
   }, [quizHistory.data, user]);
 
+  // ✅ OPTIMIZATION 2: Fetch ALL ads in ONE parallel batch query
   useEffect(() => {
     const fetchRewardAds = async () => {
       if (!user) {
@@ -338,41 +335,70 @@ function RewardsContentComponent() {
       }
 
       setAdsLoading(true);
+      const startTime = Date.now();
 
       try {
+        // ✅ Step 1: Get unique formats needed
+        const uniqueFormats = Array.from(
+          new Set(
+            sortedAttempts
+              .map((a) => a.format)
+              .filter((f) => f && FORMAT_TO_AD_SLOT[f])
+          )
+        );
+
+        console.log(`[Rewards] Fetching ads for ${uniqueFormats.length} unique formats`);
+
+        // ✅ Step 2: Fetch ALL ads for all formats in PARALLEL (one query)
+        const adsQuery = query(
+          collection(db, 'ads'),
+          where('isActive', '==', true)
+        );
+
+        const snapshot = await getDocs(adsQuery);
+        const allAds = new Map<string, AdData>();
+
+        snapshot.docs.forEach((doc) => {
+          const data = doc.data() as Omit<AdData, 'id'>;
+          if (data.adSlot && FORMAT_TO_AD_SLOT[data.adSlot]) {
+            allAds.set(data.adSlot, {
+              id: doc.id,
+              ...data,
+            });
+            // ✅ Update cache
+            adCache.set(data.adSlot, { ad: { id: doc.id, ...data }, timestamp: Date.now() });
+          }
+        });
+
+        console.log(`[Rewards] Fetched ${allAds.size} ads in ${Date.now() - startTime}ms`);
+
+        // ✅ Step 3: Map attempts to ads
         const fetchedAds: RewardAd[] = [];
 
-        for (const attempt of sortedAttempts) {
+        sortedAttempts.forEach((attempt) => {
           const format = attempt.format;
-          if (!format) continue;
+          if (!format) return;
+
           const adSlot = FORMAT_TO_AD_SLOT[format];
-          if (!adSlot) continue;
+          if (!adSlot) return;
 
-          const adsQuery = query(
-            collection(db, 'ads'),
-            where('adSlot', '==', adSlot),
-            where('isActive', '==', true),
-            limit(1)
-          );
-          const snapshot = await getDocs(adsQuery);
-          if (!snapshot.empty) {
-            const doc = snapshot.docs[0];
+          const ad = allAds.get(adSlot);
+          if (!ad) return;
 
-            const attemptTime = normalizeTimestamp(attempt.timestamp)?.getTime() || 0;
-            const attemptId = `${attempt.userId}-${attempt.slotId}-${format}-${attemptTime}`;
+          const attemptTime = normalizeTimestamp(attempt.timestamp)?.getTime() || 0;
+          const attemptId = `${attempt.userId}-${attempt.slotId}-${format}-${attemptTime}`;
 
-            fetchedAds.push({
-              id: doc.id,
-              ...(doc.data() as Omit<AdData, 'id'>),
-              attemptId,
-              format,
-            });
-          }
-        }
+          fetchedAds.push({
+            ...ad,
+            attemptId,
+            format,
+          });
+        });
 
         setRewardAds(fetchedAds);
+        console.log(`[Rewards] Mapped ${fetchedAds.length} reward cards in ${Date.now() - startTime}ms`);
       } catch (e) {
-        console.error('Error fetching reward ads', e);
+        console.error('[Rewards] Error fetching ads:', e);
         setRewardAds([]);
       } finally {
         setAdsLoading(false);
@@ -393,11 +419,9 @@ function RewardsContentComponent() {
       if (saved) {
         try {
           const state = JSON.parse(saved) as ScratchedCardState;
-          // ✅ Only restore if not expired
           if (!isCardExpired(state.scratchedAt)) {
             initial[ad.attemptId] = state;
           } else {
-            // Clean up expired card from storage
             window.localStorage.removeItem(key);
           }
         } catch (e) {
@@ -432,7 +456,6 @@ function RewardsContentComponent() {
     });
   };
 
-  // ✅ Auto-remove expired cards
   const handleCardExpired = (attemptId: string) => {
     handleDelete(attemptId);
   };
@@ -528,7 +551,6 @@ function RewardsContentComponent() {
 
   return (
     <section className="space-y-8">
-      {/* Man of the Match Awards */}
       <div id="rewards-awards" className="space-y-2">
         <h2 className="text-xl font-semibold text-foreground">
           🎁 Man of the Match Awards
@@ -542,7 +564,6 @@ function RewardsContentComponent() {
         </Card>
       </div>
 
-      {/* Partner Offers */}
       <div id="rewards-partners" className="space-y-2">
         <h3 className="text-lg font-semibold text-foreground">
           💼 Partner Offers

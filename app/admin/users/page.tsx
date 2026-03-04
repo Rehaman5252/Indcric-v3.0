@@ -12,7 +12,7 @@ import {
   type UserData
 } from '@/lib/user-management-service';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Users, TrendingUp, Clock, Calendar, Trash2, Search } from 'lucide-react';
+import { Users, TrendingUp, Clock, Calendar, Trash2, Search, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 
@@ -66,7 +66,7 @@ export default function UserManagementPage() {
   const [viewMode, setViewMode] = useState<ViewMode>(null);
   const [displayedUsers, setDisplayedUsers] = useState<UserData[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  const [searchQuery, setSearchQuery] = useState(''); // ✅ NEW: Search state
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
     const adminSession = getSessionFromStorage();
@@ -81,7 +81,7 @@ export default function UserManagementPage() {
     return () => unsubscribe();
   }, [router]);
 
-  // ✅ NEW: Filter users based on search query
+  // ✅ Filter users based on search query
   const filteredUsers = useMemo(() => {
     if (!searchQuery.trim()) return displayedUsers;
 
@@ -94,9 +94,12 @@ export default function UserManagementPage() {
   }, [displayedUsers, searchQuery]);
 
   const handleCardClick = async (mode: ViewMode) => {
+    // ✅ Prevent re-fetching if same card clicked
+    if (viewMode === mode) return;
+    
     setViewMode(mode);
     setLoadingUsers(true);
-    setSearchQuery(''); // Reset search when switching views
+    setSearchQuery('');
 
     try {
       let users: UserData[] = [];
@@ -129,11 +132,14 @@ export default function UserManagementPage() {
 
     try {
       await deleteUser(userId);
+      
+      // ✅ Optimistic UI update instead of re-fetching
+      setDisplayedUsers(prev => prev.filter(u => u.uid !== userId));
+      
       toast({
         title: 'Success',
         description: `User "${userName}" deleted successfully`,
       });
-      handleCardClick(viewMode);
     } catch (error) {
       console.error('Error deleting user:', error);
       toast({
@@ -214,7 +220,7 @@ export default function UserManagementPage() {
               </CardTitle>
             </div>
 
-            {/* ✅ NEW: Search Box */}
+            {/* Search Box */}
             <div className="mt-4 relative">
               <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <input
@@ -229,11 +235,18 @@ export default function UserManagementPage() {
 
           <CardContent>
             {loadingUsers ? (
-              <div className="text-center py-8 text-muted-foreground">Loading users...</div>
+              <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
+                <Loader2 className="h-8 w-8 animate-spin mb-3" />
+                <p>Loading users...</p>
+              </div>
             ) : filteredUsers.length === 0 && displayedUsers.length > 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No users match your search</div>
+              <div className="text-center py-8 text-muted-foreground">
+                🔍 No users match your search
+              </div>
             ) : displayedUsers.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">No users found</div>
+              <div className="text-center py-8 text-muted-foreground">
+                📭 No users found
+              </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left text-gray-300">
@@ -248,8 +261,8 @@ export default function UserManagementPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredUsers.map((user, idx) => (
-                      <tr key={idx} className="border-b border-gray-700 hover:bg-zinc-900 transition">
+                    {filteredUsers.map((user) => (
+                      <tr key={user.uid} className="border-b border-gray-700 hover:bg-zinc-900 transition">
                         <td className="px-4 py-3 font-semibold">{user.displayName}</td>
                         <td className="px-4 py-3">{user.email}</td>
                         <td className="px-4 py-3">{user.phoneNumber}</td>
@@ -277,7 +290,7 @@ export default function UserManagementPage() {
       )}
 
       <div className="text-center text-gray-500 text-xs py-4 border-t border-gray-800">
-        <p>User Management Dashboard | Search, Filter & Manage Users ✅</p>
+        <p>User Management Dashboard | Search, Filter & Manage Users ⚡ Optimized</p>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 //AIzaSyASMTWUAVIc7kDdSuGhbSEqrxUyvtzILhY
-const API_KEY = "AIzaSyDXQxKcOM1S1mEHpLtLxauZglpdIFMatIM";
+const API_KEY = "AIzaSyCeY18Hx3z1wUkw_i6_xl5nLzYCVi2NdBk";
 
 async function testAPI() {
   try {
