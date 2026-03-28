@@ -18,7 +18,7 @@ const MatchCards = memo(({ matches, loading, error, onMatchClick }: MatchCardsPr
 
   const scroll = (direction: 'left' | 'right') => {
     if (scrollContainerRef.current) {
-      const scrollAmount = 340;
+      const scrollAmount = 300; // Slightly smaller for smoother phone scroll
       scrollContainerRef.current.scrollBy({
         left: direction === 'left' ? -scrollAmount : scrollAmount,
         behavior: 'smooth',
@@ -59,27 +59,27 @@ const MatchCards = memo(({ matches, loading, error, onMatchClick }: MatchCardsPr
 
   return (
     <div className="relative">
-      {/* Scroll buttons (desktop / tablet only) */}
+      {/* Scroll buttons - hidden on phones, shown on larger screens */}
       <button
         onClick={() => scroll('left')}
-        className="hidden md:flex items-center justify-center absolute -left-3 top-1/2 -translate-y-1/2 z-10 bg-gradient-to-r from-yellow-500 to-amber-600 text-black p-2 rounded-full shadow-lg hover:shadow-yellow-500/50 transition-all duration-300 hover:scale-110"
+        className="hidden sm:flex absolute left-2 top-1/2 -translate-y-1/2 z-10 bg-gradient-to-r from-yellow-500 to-amber-600 text-black p-2 rounded-full shadow-lg hover:shadow-yellow-500/50 transition-all duration-300 hover:scale-110"
         aria-label="Scroll left"
       >
-        <ChevronLeft className="h-6 w-6" />
+        <ChevronLeft className="h-5 w-5" />
       </button>
 
       <button
         onClick={() => scroll('right')}
-        className="hidden md:flex items-center justify-center absolute -right-3 top-1/2 -translate-y-1/2 z-10 bg-gradient-to-r from-yellow-500 to-amber-600 text-black p-2 rounded-full shadow-lg hover:shadow-yellow-500/50 transition-all duration-300 hover:scale-110"
+        className="hidden sm:flex absolute right-2 top-1/2 -translate-y-1/2 z-10 bg-gradient-to-r from-yellow-500 to-amber-600 text-black p-2 rounded-full shadow-lg hover:shadow-yellow-500/50 transition-all duration-300 hover:scale-110"
         aria-label="Scroll right"
       >
-        <ChevronRight className="h-6 w-6" />
+        <ChevronRight className="h-5 w-5" />
       </button>
 
-      {/* Scrollable container */}
+      {/* Scrollable container - tighter padding on phones */}
       <div
         ref={scrollContainerRef}
-        className="flex gap-4 overflow-x-auto scrollbar-hide scroll-smooth px-4 sm:px-10 py-2 -mx-4 sm:mx-0"
+        className="flex gap-3 sm:gap-4 overflow-x-auto scrollbar-hide scroll-smooth px-2 sm:px-8 py-2 -mx-2 sm:mx-0"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
         {matches.map((match) => (
